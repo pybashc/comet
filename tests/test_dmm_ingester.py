@@ -67,6 +67,35 @@ class DmmArchiveTests(unittest.TestCase):
                     ],
                 )
 
+    def test_hashlist_decode_reads_stored_list_by_id(self):
+        list_id = "35dca8f8-7cdb-4516-8465-7b4ea1564964"
+        payload = "N4IgLglmA2CmIC4QC0QBpwHsBO3YDswBnRAbVADMI58BDAW3iSIFcAHWbAAnswBNY0EhgAWtIiMQhatACwAjWgCYAbAEYAHLIqyNKgAzyAxgGZ5akypNKlFNXzsB2a3xMBWPkaPwM8gJ5gsCQIam6ySm5uSrJuAL4AurFAA"
+        expected = [
+            {
+                "hash": "aa4ba26184f4860bc3b136322f1df1732d35dcce",
+                "filename": "super models",
+                "size": 154255245,
+                "parsed_title": "super models",
+                "parsed_year": None,
+            }
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lists").mkdir()
+            page = root / f"{list_id}.html"
+            page.write_text(
+                f'<iframe src="https://debridmediamanager.com/hashlist#id={list_id}"></iframe>'
+            )
+
+            self.assertIsNone(process_file_sync(page))
+
+            for stored in (
+                payload,
+                f'<html><iframe src="https://debridmediamanager.com/hashlist#{payload}"></iframe></html>',
+            ):
+                (root / "lists" / f"{list_id}.txt").write_text(stored)
+                self.assertEqual(process_file_sync(page), expected)
+
     def test_extract_rejects_path_traversal_before_writing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

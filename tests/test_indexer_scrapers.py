@@ -160,6 +160,100 @@ class IndexerScraperTests(unittest.IsolatedAsyncioTestCase):
             "RuntimeError: transport failed"
         )
 
+    async def test_jackett_consolidates_download_failures_per_indexer(self):
+        results = [
+            {
+                "Details": "alpha-1",
+                "Title": "alpha-1",
+                "Seeders": None,
+                "Size": 1,
+                "Tracker": "alpha",
+                "Link": "http://jackett/dl/alpha/1",
+            },
+            {
+                "Details": "alpha-2",
+                "Title": "alpha-2",
+                "Seeders": None,
+                "Size": 1,
+                "Tracker": "alpha",
+                "Link": "http://jackett/dl/alpha/2",
+            },
+            {
+                "Details": "beta-1",
+                "Title": "beta-1",
+                "Seeders": None,
+                "Size": 1,
+                "Tracker": "beta",
+                "Link": "http://jackett/dl/beta/1",
+            },
+        ]
+
+        scraper = JackettScraper(None, None, "https://jackett.test")
+        scraper.fetch_jackett_results = AsyncMock(return_value=results)
+        with (
+            patch("comet.scrapers.jackett.settings.JACKETT_INDEXERS", ["indexer"]),
+            patch(
+                "comet.scrapers.jackett.download_torrent",
+                AsyncMock(return_value=(None, None, None)),
+            ),
+            patch("comet.scrapers.base.logger.debug") as debug,
+        ):
+            torrents = await scraper.scrape(REQUEST)
+
+        self.assertEqual(torrents, [])
+        self.assertEqual(
+            [call.args[0] for call in debug.call_args_list],
+            [
+                "Failed to download 2 torrent(s) from alpha "
+                "(in most cases, you can ignore this error)",
+                "Failed to download 1 torrent(s) from beta "
+                "(in most cases, you can ignore this error)",
+            ],
+        )
+
+    async def test_prowlarr_consolidates_download_failures_per_indexer(self):
+        results = [
+            {
+                "infoUrl": "alpha-1",
+                "title": "alpha-1",
+                "seeders": None,
+                "size": 1,
+                "indexer": "alpha",
+                "downloadUrl": "http://prowlarr/dl/alpha/1",
+            },
+            {
+                "infoUrl": "beta-1",
+                "title": "beta-1",
+                "seeders": None,
+                "size": 1,
+                "indexer": "beta",
+                "downloadUrl": "http://prowlarr/dl/beta/1",
+            },
+        ]
+
+        scraper = ProwlarrScraper(None, None, "https://prowlarr.test")
+        scraper._fetch_search_results = AsyncMock(return_value=results)
+        with (
+            patch("comet.scrapers.prowlarr.settings.PROWLARR_INDEXERS", ["1"]),
+            patch(
+                "comet.scrapers.prowlarr.download_torrent",
+                AsyncMock(return_value=(None, None, None)),
+            ),
+            patch("comet.scrapers.base.logger.debug") as debug,
+        ):
+            torrents = await scraper.scrape(REQUEST)
+
+        self.assertEqual(torrents, [])
+        self.assertEqual(
+            [call.args[0] for call in debug.call_args_list],
+            [
+                "Failed to download 1 torrent(s) from alpha "
+                "(in most cases, you can ignore this error)",
+                "Failed to download 1 torrent(s) from beta "
+                "(in most cases, you can ignore this error)",
+            ],
+        )
+
     async def test_stremthru_discards_invalid_magnets_before_filtering(self):
         xml = """
         <rss xmlns:torznab="http://torznab.com/schemas/2015/feed">

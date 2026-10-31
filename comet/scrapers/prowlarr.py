@@ -42,6 +42,9 @@ class ProwlarrScraper(BaseScraper):
                 self.session, result["downloadUrl"]
             )
 
+            if not content and not magnet_hash:
+                self.download_failures[base_torrent["tracker"] or "unknown"] += 1
+
             if content:
                 metadata = await asyncio.to_thread(extract_torrent_metadata, content)
                 if metadata:
@@ -172,4 +175,5 @@ class ProwlarrScraper(BaseScraper):
                 f"Exception while getting torrents for {request.title} with Prowlarr: {e}"
             )
 
+        self.log_download_failures()
         return deduplicate_torrents(torrents)

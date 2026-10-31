@@ -1,5 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
+from collections import Counter
 from collections.abc import Awaitable, Iterable
 from typing import TypeVar
 
@@ -64,6 +65,16 @@ class BaseScraper(ABC):
         self.manager = manager
         self.session = session
         self.url = url
+        self.download_failures: Counter[str] = Counter()
+
+    def log_download_failures(self) -> None:
+        for indexer, count in sorted(
+            self.download_failures.items(), key=lambda item: (-item[1], item[0])
+        ):
+            logger.debug(
+                f"Failed to download {count} torrent(s) from {indexer} "
+                "(in most cases, you can ignore this error)"
+            )
 
     @abstractmethod
     async def scrape(self, request: ScrapeRequest):

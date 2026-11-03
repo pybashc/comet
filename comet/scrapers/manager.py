@@ -119,7 +119,7 @@ class ScraperManager:
             duration,
             len(results) if isinstance(results, list) else 0,
         )
-        return name, results, duration
+        return name, results, duration, outcome
 
     @staticmethod
     def _resolve_url_for_context(url: str, context: str):
@@ -169,14 +169,17 @@ class ScraperManager:
                 if url_credentials_pairs:
                     active_instance_count = 0
                     for url, password in url_credentials_pairs:
+                        active_instance_count += 1
                         parsed_url = self._resolve_url_for_context(url, request.context)
                         if parsed_url is None:
                             continue
-                        active_instance_count += 1
+                        instance_name = f"{scraper_name_clean} #{active_instance_count}"
+                        if instance_name in request.skip_scrapers:
+                            continue
                         scraper = scraper_class(self, client, parsed_url, password)
                         tasks.append(
                             self._scrape_wrapper(
-                                f"{scraper_name_clean} #{active_instance_count}",
+                                instance_name,
                                 scraper,
                                 request,
                                 scrape_timeout,
@@ -190,14 +193,17 @@ class ScraperManager:
                 if url_credentials_pairs:
                     active_instance_count = 0
                     for url, credentials in url_credentials_pairs:
+                        active_instance_count += 1
                         parsed_url = self._resolve_url_for_context(url, request.context)
                         if parsed_url is None:
                             continue
-                        active_instance_count += 1
+                        instance_name = f"{scraper_name_clean} #{active_instance_count}"
+                        if instance_name in request.skip_scrapers:
+                            continue
                         scraper = scraper_class(self, client, parsed_url, credentials)
                         tasks.append(
                             self._scrape_wrapper(
-                                f"{scraper_name_clean} #{active_instance_count}",
+                                instance_name,
                                 scraper,
                                 request,
                                 scrape_timeout,
@@ -216,20 +222,25 @@ class ScraperManager:
                 if urls:
                     active_instance_count = 0
                     for url in urls:
+                        active_instance_count += 1
                         parsed_url = self._resolve_url_for_context(url, request.context)
                         if parsed_url is None:
                             continue
-                        active_instance_count += 1
+                        instance_name = f"{scraper_name_clean} #{active_instance_count}"
+                        if instance_name in request.skip_scrapers:
+                            continue
                         scraper = scraper_class(self, client, parsed_url)
                         tasks.append(
                             self._scrape_wrapper(
-                                f"{scraper_name_clean} #{active_instance_count}",
+                                instance_name,
                                 scraper,
                                 request,
                                 scrape_timeout,
                             )
                         )
                 else:
+                    if scraper_name_clean in request.skip_scrapers:
+                        continue
                     scraper = scraper_class(self, client)
                     tasks.append(
                         self._scrape_wrapper(

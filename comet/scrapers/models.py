@@ -16,6 +16,8 @@ class ScrapeRequest(BaseModel):
     episode: int | None = None
     context: ScrapeContext = ScrapeContext.LIVE
     search_titles: tuple[str, ...] = ()
+    # Instance names already scraped successfully for this title; skipped when set.
+    skip_scrapers: frozenset[str] = frozenset()
 
     @property
     def query_titles(self) -> tuple[str, ...]:

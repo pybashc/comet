@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from comet.core.scrape import ScrapeContext
 from comet.services.orchestration import TorrentManager, scraper_manager, settings
@@ -303,3 +303,37 @@ class TorrentOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             manager.torrents[episode_hash]["title"],
             "Show.S02E03.mkv",
         )
+
+    async def test_background_scrape_skips_sources_that_succeeded_live(self):
+        manager = TorrentManager(
+            media_type="movie",
+            media_full_id="tt123",
+            media_only_id="tt123",
+            title="Movie",
+            year=2026,
+            year_end=None,
+            season=None,
+            episode=None,
+            aliases={},
+            remove_adult_content=False,
+        )
+        requests = []
+
+        async def fake_scrape_all(request):
+            requests.append(request)
+            if request.context == ScrapeContext.LIVE:
+                yield "Stremthru #1", [], 0.1, "success"
+                yield "Stremthru #2", [], 0.1, "timeout"
+            else:
+                yield "Stremthru #2", [], 0.1, "success"
+
+        with (
+            patch.object(scraper_manager, "scrape_all", new=fake_scrape_all),
+            patch.object(manager, "filter_manager", new=AsyncMock()),
+            patch.object(manager, "cache_torrents", new=AsyncMock()),
+        ):
+            await manager.scrape_torrents(ScrapeContext.LIVE)
+            await manager.scrape_torrents(ScrapeContext.BACKGROUND)
+
+        self.assertEqual(requests[0].skip_scrapers, frozenset())
+        self.assertEqual(requests[1].skip_scrapers, frozenset({"Stremthru #1"}))

@@ -108,6 +108,7 @@ class TorrentManager:
         self.ranked_torrents = {}
         self.primary_cached = False
         self.live_result_timestamp = time.time()
+        self.live_successful_scrapers = set()
 
     def _matches_requested_scope(
         self,
@@ -151,6 +152,11 @@ class TorrentManager:
                 include_canonical=settings.INDEXER_INCLUDE_CANONICAL_TITLE,
                 include_original=settings.INDEXER_INCLUDE_ORIGINAL_TITLE,
             ),
+            skip_scrapers=(
+                frozenset(self.live_successful_scrapers)
+                if context == ScrapeContext.BACKGROUND
+                else frozenset()
+            ),
         )
         titles = " · ".join(f"“{title}”" for title in request.query_titles)
         logger.log(
@@ -158,9 +164,11 @@ class TorrentManager:
             f"🔤 Indexer titles ({len(request.query_titles)}): {titles}",
         )
 
-        async for scraper_name, results, response_time in scraper_manager.scrape_all(
-            request
+        async for scraper_name, results, response_time, outcome in (
+            scraper_manager.scrape_all(request)
         ):
+            if context == ScrapeContext.LIVE and outcome == "success":
+                self.live_successful_scrapers.add(scraper_name)
             await self.filter_manager(scraper_name, results, response_time)
 
         await self.cache_torrents()

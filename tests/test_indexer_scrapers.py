@@ -1,6 +1,8 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from comet.core.scrape import ScrapeContext
 from comet.scrapers.jackett import JackettScraper
 from comet.scrapers.models import ScrapeRequest
 from comet.scrapers.prowlarr import ProwlarrScraper
@@ -23,6 +25,18 @@ def _torrent(info_hash):
         "size": None,
         "tracker": "indexer",
         "sources": [],
+    }
+
+
+def _jackett_result(token):
+    return {
+        "Details": token,
+        "InfoHash": token.ljust(40, "0"),
+        "Title": token,
+        "Seeders": 1,
+        "Size": 1,
+        "Tracker": "indexer",
+        "Link": None,
     }
 
 
@@ -284,4 +298,95 @@ class IndexerScraperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [(torrent["infoHash"], torrent["tracker"]) for torrent in torrents],
             [("2" * 40, "StremThru|Knaben"), ("3" * 40, "StremThru")],
+        )
+
+    async def test_jackett_live_budget_moves_unfinished_indexers_to_background(self):
+        blocked = asyncio.Event()
+        indexers = ["fast", "slow-search", "slow-process"]
+
+        def build_scraper(fetch, process):
+            scraper = JackettScraper(None, None, "https://jackett.test")
+            scraper.name = "Jackett #1"
+            scraper.fetch_jackett_results = fetch
+            scraper.process_torrent = process
+            return scraper
+
+        async def live_fetch(indexer, query):
+            del query
+            if indexer == "slow-search":
+                await blocked.wait()
+            return [_jackett_result(indexer)]
+
+        async def live_process(result, media_id, season):
+            del media_id, season
+            if result["Title"] == "slow-process":
+                await blocked.wait()
+            return [_torrent(result["InfoHash"])]
+
+        live_scraper = build_scraper(live_fetch, live_process)
+        with (
+            patch("comet.scrapers.jackett.settings.JACKETT_INDEXERS", indexers),
+            patch("comet.scrapers.jackett.settings.INDEXER_LIVE_TIMEOUT", 0.05),
+        ):
+            live_torrents = await live_scraper.scrape(REQUEST)
+
+        self.assertEqual(
+            [torrent["infoHash"] for torrent in live_torrents],
+            [_jackett_result("fast")["InfoHash"]],
+        )
+        self.assertEqual(live_scraper.completed_entries, {"Jackett #1:fast"})
+
+        queried = []
+
+        async def background_fetch(indexer, query):
+            del query
+            queried.append(indexer)
+            return [_jackett_result(indexer)]
+
+        async def background_process(result, media_id, season):
+            del media_id, season
+            return [_torrent(result["InfoHash"])]
+
+        background_scraper = build_scraper(background_fetch, background_process)
+        request = ScrapeRequest(
+            media_type="movie",
+            media_id="tt123",
+            media_only_id="tt123",
+            title="Movie",
+            context=ScrapeContext.BACKGROUND,
+            skip_scrapers=frozenset({"Jackett #1:fast"}),
+        )
+        with patch("comet.scrapers.jackett.settings.JACKETT_INDEXERS", indexers):
+            background_torrents = await background_scraper.scrape(request)
+
+        self.assertEqual(sorted(queried), ["slow-process", "slow-search"])
+        self.assertEqual(
+            sorted(torrent["infoHash"] for torrent in background_torrents),
+            sorted(_jackett_result(indexer)["InfoHash"] for indexer in queried),
+        )
+
+    async def test_jackett_marks_instance_when_all_indexers_finish_live(self):
+        indexers = ["alpha", "beta"]
+
+        async def fetch(indexer, query):
+            del query
+            return [_jackett_result(indexer)]
+
+        async def process(result, media_id, season):
+            del media_id, season
+            return [_torrent(result["InfoHash"])]
+
+        scraper = JackettScraper(None, None, "https://jackett.test")
+        scraper.name = "Jackett #1"
+        scraper.fetch_jackett_results = fetch
+        scraper.process_torrent = process
+        with (
+            patch("comet.scrapers.jackett.settings.JACKETT_INDEXERS", indexers),
+            patch("comet.scrapers.jackett.settings.INDEXER_LIVE_TIMEOUT", 1.0),
+        ):
+            await scraper.scrape(REQUEST)
+
+        self.assertEqual(
+            scraper.completed_entries,
+            {"Jackett #1", "Jackett #1:alpha", "Jackett #1:beta"},
         )

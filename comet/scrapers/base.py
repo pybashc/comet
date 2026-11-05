@@ -60,11 +60,15 @@ async def gather_with_error_logging[T](
 
 class BaseScraper(ABC):
     impersonate: str | None = None
+    # Set when the scraper reports per-entry completion keys ("instance:entry").
+    reports_entry_completion = False
 
     def __init__(self, manager, session: AsyncClientWrapper, url: str | None = None):
         self.manager = manager
         self.session = session
         self.url = url
+        self.name: str | None = None
+        self.completed_entries: set[str] = set()
         self.download_failures: Counter[str] = Counter()
 
     def log_download_failures(self) -> None:

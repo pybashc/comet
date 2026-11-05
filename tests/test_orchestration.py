@@ -322,10 +322,11 @@ class TorrentOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         async def fake_scrape_all(request):
             requests.append(request)
             if request.context == ScrapeContext.LIVE:
-                yield "Stremthru #1", [], 0.1, "success"
-                yield "Stremthru #2", [], 0.1, "timeout"
+                yield "Stremthru #1", [], 0.1, "success", frozenset({"Stremthru #1"})
+                yield "Jackett #1", [], 0.1, "success", frozenset({"Jackett #1:fast"})
+                yield "Stremthru #2", [], 0.1, "timeout", frozenset()
             else:
-                yield "Stremthru #2", [], 0.1, "success"
+                yield "Stremthru #2", [], 0.1, "success", frozenset({"Stremthru #2"})
 
         with (
             patch.object(scraper_manager, "scrape_all", new=fake_scrape_all),
@@ -336,4 +337,7 @@ class TorrentOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             await manager.scrape_torrents(ScrapeContext.BACKGROUND)
 
         self.assertEqual(requests[0].skip_scrapers, frozenset())
-        self.assertEqual(requests[1].skip_scrapers, frozenset({"Stremthru #1"}))
+        self.assertEqual(
+            requests[1].skip_scrapers,
+            frozenset({"Stremthru #1", "Jackett #1:fast"}),
+        )

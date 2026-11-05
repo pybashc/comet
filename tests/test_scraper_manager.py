@@ -29,7 +29,13 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
             "comet.scrapers.manager.time.perf_counter",
             side_effect=(10.0, 10.875),
         ):
-            name, results, response_time, outcome = await manager._scrape_wrapper(
+            (
+                name,
+                results,
+                response_time,
+                outcome,
+                completed_entries,
+            ) = await manager._scrape_wrapper(
                 "Example", scraper, request, timeout=30
             )
 
@@ -37,6 +43,33 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results, [{"title": "Result"}])
         self.assertEqual(response_time, 0.875)
         self.assertEqual(outcome, "success")
+        self.assertEqual(completed_entries, frozenset({"Example"}))
+
+    async def test_scrape_wrapper_keeps_entry_completion_keys(self):
+        class EntryScraper:
+            reports_entry_completion = True
+
+            def __init__(self):
+                self.completed_entries = {"Example #1:fast"}
+
+            async def scrape(self, request):
+                del request
+                return []
+
+        manager = ScraperManager.__new__(ScraperManager)
+        request = ScrapeRequest(
+            media_type="movie",
+            media_id="tt123",
+            media_only_id="tt123",
+            title="Title",
+            context="live",
+        )
+
+        _, _, _, _, completed_entries = await manager._scrape_wrapper(
+            "Example #1", EntryScraper(), request, timeout=30
+        )
+
+        self.assertEqual(completed_entries, frozenset({"Example #1:fast"}))
 
     def test_timeout_resolution_uses_most_specific_override(self):
         manager = ScraperManager.__new__(ScraperManager)
@@ -194,7 +227,7 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
         ):
             results = [result async for result in manager.scrape_all(request)]
 
-        results_by_name = {name: torrents for name, torrents, _, _ in results}
+        results_by_name = {name: torrents for name, torrents, _, _, _ in results}
         self.assertEqual(results_by_name["Nyaa"], [{"title": "Fast result"}])
         self.assertEqual(results_by_name["Zilean #1"], [])
         self.assertTrue(cancelled.is_set())
@@ -296,7 +329,7 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
         ):
             live = [
                 (name, outcome)
-                async for name, _, _, outcome in manager.scrape_all(
+                async for name, _, _, outcome, _ in manager.scrape_all(
                     request_for(ScrapeContext.LIVE)
                 )
             ]
@@ -305,7 +338,7 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
             constructed.clear()
             background = [
                 name
-                async for name, _, _, _ in manager.scrape_all(
+                async for name, _, _, _, _ in manager.scrape_all(
                     request_for(ScrapeContext.BACKGROUND, frozenset({"Zilean #2"}))
                 )
             ]

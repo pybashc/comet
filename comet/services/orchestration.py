@@ -164,11 +164,15 @@ class TorrentManager:
             f"🔤 Indexer titles ({len(request.query_titles)}): {titles}",
         )
 
-        async for scraper_name, results, response_time, outcome in (
-            scraper_manager.scrape_all(request)
-        ):
-            if context == ScrapeContext.LIVE and outcome == "success":
-                self.live_successful_scrapers.add(scraper_name)
+        async for (
+            scraper_name,
+            results,
+            response_time,
+            _outcome,
+            completed_entries,
+        ) in scraper_manager.scrape_all(request):
+            if context == ScrapeContext.LIVE:
+                self.live_successful_scrapers.update(completed_entries)
             await self.filter_manager(scraper_name, results, response_time)
 
         await self.cache_torrents()

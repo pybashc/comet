@@ -29,13 +29,14 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
             "comet.scrapers.manager.time.perf_counter",
             side_effect=(10.0, 10.875),
         ):
-            name, results, response_time = await manager._scrape_wrapper(
+            name, results, response_time, outcome = await manager._scrape_wrapper(
                 "Example", scraper, request, timeout=30
             )
 
         self.assertEqual(name, "Example")
         self.assertEqual(results, [{"title": "Result"}])
         self.assertEqual(response_time, 0.875)
+        self.assertEqual(outcome, "success")
 
     def test_timeout_resolution_uses_most_specific_override(self):
         manager = ScraperManager.__new__(ScraperManager)
@@ -193,7 +194,7 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
         ):
             results = [result async for result in manager.scrape_all(request)]
 
-        results_by_name = {name: torrents for name, torrents, _ in results}
+        results_by_name = {name: torrents for name, torrents, _, _ in results}
         self.assertEqual(results_by_name["Nyaa"], [{"title": "Fast result"}])
         self.assertEqual(results_by_name["Zilean #1"], [])
         self.assertTrue(cancelled.is_set())
@@ -258,3 +259,56 @@ class ScraperManagerTaskTests(unittest.IsolatedAsyncioTestCase):
             await results.aclose()
 
         self.assertTrue(slow_cancelled.is_set())
+
+    async def test_skip_scrapers_matches_instances_across_contexts(self):
+        constructed = []
+
+        class RecordingScraper:
+            impersonate = None
+
+            def __init__(self, manager, client, url):
+                del manager, client
+                constructed.append(url)
+
+            async def scrape(self, request):
+                del request
+                return []
+
+        manager = ScraperManager.__new__(ScraperManager)
+        manager.scrapers = {"ZileanScraper": RecordingScraper}
+        urls = ["https://background.example:background", "https://both.example"]
+
+        def request_for(context, skip_scrapers=frozenset()):
+            return ScrapeRequest(
+                media_type="movie",
+                media_id="tt123",
+                media_only_id="tt123",
+                title="Title",
+                context=context,
+                skip_scrapers=skip_scrapers,
+            )
+
+        with (
+            patch.object(settings, "SCRAPE_ZILEAN", True),
+            patch.object(settings, "ZILEAN_URL", urls),
+            patch.object(settings, "BACKGROUND_SCRAPE_TIMEOUT", 10.0),
+            patch.object(network_manager, "get_client", return_value=object()),
+        ):
+            live = [
+                (name, outcome)
+                async for name, _, _, outcome in manager.scrape_all(
+                    request_for(ScrapeContext.LIVE)
+                )
+            ]
+            self.assertEqual(live, [("Zilean #2", "success")])
+
+            constructed.clear()
+            background = [
+                name
+                async for name, _, _, _ in manager.scrape_all(
+                    request_for(ScrapeContext.BACKGROUND, frozenset({"Zilean #2"}))
+                )
+            ]
+
+        self.assertEqual(background, ["Zilean #1"])
+        self.assertEqual(constructed, ["https://background.example"])

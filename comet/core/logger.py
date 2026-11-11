@@ -399,6 +399,14 @@ def log_startup_info(settings):
     logger.log("COMET", f"Indexer Manager Timeout: {settings.INDEXER_MANAGER_TIMEOUT}s")
     logger.log(
         "COMET",
+        (
+            f"Indexer Live Timeout: {settings.INDEXER_LIVE_TIMEOUT:g}s per indexer"
+            if settings.INDEXER_LIVE_TIMEOUT > 0
+            else "Indexer Live Timeout: Disabled"
+        ),
+    )
+    logger.log(
+        "COMET",
         f"Indexer Manager Wait Timeout: {settings.INDEXER_MANAGER_WAIT_TIMEOUT}s",
     )
     logger.log(

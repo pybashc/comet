@@ -95,6 +95,7 @@ class ScraperManager:
         request: ScrapeRequest,
         timeout: float,
     ):
+        scraper.name = name
         started_at = time.perf_counter()
         outcome = "success"
         try:
@@ -119,7 +120,22 @@ class ScraperManager:
             duration,
             len(results) if isinstance(results, list) else 0,
         )
-        return name, results, duration, outcome
+        if outcome == "timeout":
+            # A wrapper-level cut means the whole instance is retried.
+            completed_entries = frozenset()
+        else:
+            raw_entries = getattr(scraper, "completed_entries", ())
+            completed_entries = set(
+                raw_entries if isinstance(raw_entries, (set, frozenset)) else ()
+            )
+            entry_level = (
+                getattr(type(scraper), "reports_entry_completion", False) is True
+            )
+            if outcome == "success" and not entry_level:
+                completed_entries.add(name)
+            completed_entries = frozenset(completed_entries)
+
+        return name, results, duration, outcome, completed_entries
 
     @staticmethod
     def _resolve_url_for_context(url: str, context: str):

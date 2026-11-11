@@ -84,6 +84,21 @@ class TorrentMetadataTests(unittest.TestCase):
         )
 
 
+class TorrentDownloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_download_returns_empty_and_does_not_log_per_torrent(self):
+        class FailingSession:
+            def get(self, *args, **kwargs):
+                raise RuntimeError("connection refused")
+
+        with patch("comet.services.torrent_manager.logger.debug") as debug:
+            result = await torrent_manager.download_torrent(
+                FailingSession(), "http://jackett/dl/example"
+            )
+
+        self.assertEqual(result, (None, None, None))
+        debug.assert_not_called()
+
+
 class TorrentPersistenceTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _make_update(title: str, index: int):

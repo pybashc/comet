@@ -28,6 +28,7 @@ class ProwlarrScraper(BaseScraper):
             grab_known_hash=settings.PROWLARR_GRAB_KNOWN_HASHES,
             media_id=media_id,
             season=season,
+            download_failures=self.download_failures,
         )
 
     async def _fetch_search_results(self, query):
@@ -113,4 +114,5 @@ class ProwlarrScraper(BaseScraper):
                 f"Exception while getting torrents for {request.title} with Prowlarr: {e}"
             )
 
+        self.log_download_failures()
         return deduplicate_torrents(torrents)

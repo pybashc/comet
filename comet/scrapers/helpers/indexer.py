@@ -1,4 +1,5 @@
 import asyncio
+from collections import Counter
 
 from comet.scrapers.models import ScrapeResult
 from comet.services.torrent_manager import (
@@ -22,6 +23,7 @@ async def resolve_indexer_release(
     grab_known_hash: bool,
     media_id: str,
     season: int | None,
+    download_failures: Counter[str] | None = None,
 ) -> list[ScrapeResult]:
     """Turn a Jackett/Prowlarr release into scrape results.
 
@@ -45,6 +47,8 @@ async def resolve_indexer_release(
         content, grabbed_hash, grabbed_magnet = await download_torrent(
             session, download_url
         )
+        if not content and not grabbed_hash and download_failures is not None:
+            download_failures[tracker or "unknown"] += 1
         if content and (
             metadata := await asyncio.to_thread(extract_torrent_metadata, content)
         ):

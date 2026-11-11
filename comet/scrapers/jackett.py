@@ -30,6 +30,7 @@ class JackettScraper(BaseScraper):
             grab_known_hash=settings.JACKETT_GRAB_KNOWN_HASHES,
             media_id=media_id,
             season=season,
+            download_failures=self.download_failures,
         )
 
     async def fetch_jackett_results(self, indexer: str, query: str):
@@ -168,4 +169,5 @@ class JackettScraper(BaseScraper):
         ):
             self.completed_entries.add(self.name)
 
+        self.log_download_failures()
         return deduplicate_torrents(torrents)

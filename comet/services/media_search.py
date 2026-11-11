@@ -512,7 +512,8 @@ async def search_media(
 
     cache_manager = CacheStateManager(media_id)
     cache_result = await cache_manager.check_and_decide(torrent_count)
-    force_scrape_now = not torrent_manager.primary_cached
+    # Always run a live scrape before responding; upstream gates this on cache age.
+    force_scrape_now = True
     lock_acquired = cache_result.lock_acquired
     sort_mixed = is_torrent_only or config["sortCachedUncachedTogether"]
     account_snapshot_ready = False
@@ -520,7 +521,7 @@ async def search_media(
     if force_scrape_now and not lock_acquired:
         lock_acquired = await cache_manager.try_acquire_lock()
 
-    if (force_scrape_now and not lock_acquired) or (
+    if (force_scrape_now and not lock_acquired and torrent_count == 0) or (
         cache_result.should_return_wait_message and not force_scrape_now
     ):
         logger.log(
@@ -541,7 +542,8 @@ async def search_media(
             use_account_scrape=use_account_scrape,
         )
 
-    if cache_result.should_scrape_background and not force_scrape_now:
+    # Always schedule a background scrape alongside the live one.
+    if lock_acquired:
         logger.log(
             "SCRAPER",
             f"🔄 Starting background scrape for {log_title} "
@@ -556,7 +558,7 @@ async def search_media(
             session,
         )
 
-    if cache_result.should_scrape_now or force_scrape_now:
+    if lock_acquired and (cache_result.should_scrape_now or force_scrape_now):
         logger.log("SCRAPER", f"🔎 Starting new search for {log_title}")
         try:
             if use_account_scrape:
